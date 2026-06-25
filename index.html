@@ -64,7 +64,7 @@
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 🎵 완전히 새롭게 튜닝한 테트리스(Korobeiniki) 오리지널 멜로디 악보
+    // 🎵 테트리스(Korobeiniki) 오리지널 멜로디 악보 데이터 완전 보강
     const tetrisBGM = [
         {f: 659.25, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 523.25, d: 1}, {f: 493.88, d: 1},
         {f: 440.00, d: 2}, {f: 440.00, d: 1}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
@@ -85,14 +85,14 @@
         if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
-        // 사다리 다리 배치
+        // 예측 불가능하고 공정한 사다리 다리 배치
         bridges = [];
         for (let i = 0; i < linesCount - 1; i++) {
             let bridgeYPositions = [];
-            let bridgeCount = Math.floor(Math.random() * 2) + 4; // 가로선 개수 균형 조절
+            let bridgeCount = Math.floor(Math.random() * 2) + 3; // 라인당 3~4개 가로선
             for (let j = 0; j < bridgeCount; j++) {
-                let y = Math.floor(Math.random() * 240) + 80; 
-                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 20)) { 
+                let y = Math.floor(Math.random() * 220) + 90; // 안전 마진 확보
+                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 25)) { 
                     bridgeYPositions.push(y);
                     bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
                 }
@@ -102,7 +102,7 @@
         document.getElementById('setup-screen').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
         
-        // 오디오 컨텍스트 강제 깨우기 및 음악 시작
+        // 모바일 오디오 깨우기
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
         
@@ -114,7 +114,7 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const colWidth = canvas.width / (linesCount + 1);
 
-        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
         ctx.lineWidth = 4;
         for (let i = 0; i < linesCount; i++) {
             let x = colWidth * (i + 1);
@@ -143,94 +143,114 @@
             const btn = document.createElement('button');
             btn.innerText = `${name} 출발!`;
             btn.style.width = 'auto'; btn.style.margin = '5px'; btn.style.fontSize = '14px';
-            btn.onclick = () => animateBug(idx, btn);
+            btn.onclick = () => animateBugReal(idx, btn);
             container.appendChild(btn);
         });
     }
 
-    // 🐛 가로 슬라이딩 모션이 추가된 애벌레 애니메이션
-    function animateBug(startIdx, btnElement) {
+    // 🐛 [핵심 수정] 10배 느려진 기어가기 + 갈림길 두리번 모션 제어 (상태 머신 구조)
+    function animateBugReal(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
         
         const colWidth = canvas.width / (linesCount + 1);
-        let currentXIdx = startIdx;
-        let currentY = 50;
-        let path = [{ x: colWidth * (currentXIdx + 1), y: currentY }];
-
-        while (currentY < 350) {
-            currentY += 1; // 1픽셀 단위로 정밀하게 내려감
-            let bridge = bridges.find(b => b.y === currentY && (b.fromIdx === currentXIdx || b.toIdx === currentXIdx));
-            
-            if (bridge) {
-                let targetXIdx = (bridge.fromIdx === currentXIdx) ? bridge.toIdx : bridge.fromIdx;
-                let startX = colWidth * (currentXIdx + 1);
-                let endX = colWidth * (targetXIdx + 1);
-                
-                // 💡 [핵심수정] 가로 다리를 건널 때 45단계로 쪼개서 기어가도록 수정 (순간이동 차단!)
-                let slideSteps = 45;
-                for(let s = 0; s <= slideSteps; s++) {
-                    path.push({
-                        x: startX + (endX - startX) * (s / slideSteps),
-                        y: currentY
-                    });
-                }
-                
-                currentXIdx = targetXIdx;
-                currentY += 15; // 다리 탈출 점프
-            } else {
-                path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
-            }
-        }
-
-        let step = 0;
-        let frameDelay = 0;
+        let currentLine = startIdx;
+        let y = 50;
         
+        let state = 'DOWN'; // 상태 종류: 'DOWN' (기려내려가기), 'LOOKING' (두리번거리기), 'CROSSING' (횡단하기)
+        let lookTimer = 0;
+        let crossProgress = 0;
+        let activeBridge = null;
+        let lastBridgeY = 0;
+        
+        let wormAngle = 0;
+        let tick = 0;
+
         function walk() {
-            if (step < path.length) {
+            tick++;
+            let currentX = colWidth * (currentLine + 1);
+            
+            if (y < 350) {
+                // 1. 일반 하강 상태 (속도를 기존보다 90% 낮춘 초저속 모드)
+                if (state === 'DOWN') {
+                    y += 0.3; // 픽셀 단위를 대폭 낮춰 아주 정밀하고 느리게 하강
+                    wormAngle = Math.sin(tick * 0.08) * 0.15; // 부드러운 하강 꼬물거림
+                    
+                    let currentYInt = Math.floor(y);
+                    if (currentYInt !== lastBridgeY) {
+                        let bridge = bridges.find(b => b.y === currentYInt && (b.fromIdx === currentLine || b.toIdx === currentLine));
+                        if (bridge) {
+                            playTone(350, 0.08); // 갈림길 발견 '웅?' 효과음
+                            state = 'LOOKING';
+                            lookTimer = 80; // 두리번거리는 시간 (80프레임 = 약 1.3초 일시정지)
+                            activeBridge = bridge;
+                            lastBridgeY = currentYInt;
+                        }
+                    }
+                } 
+                // 2. 🤔 갈림길 두리번 두리번 상태 (좌우 관찰 모션)
+                else if (state === 'LOOKING') {
+                    // 좌우로 각도를 크게 흔들어 고개를 돌리는 귀여운 모션 연출
+                    wormAngle = Math.sin(lookTimer * 0.15) * 0.7; 
+                    lookTimer--;
+                    if (lookTimer <= 0) {
+                        state = 'CROSSING';
+                        crossProgress = 0;
+                    }
+                } 
+                // 3. 가로 다리 기어가는 상태
+                else if (state === 'CROSSING') {
+                    crossProgress += 0.012; // 가로 이동 속도도 매우 완만하게 조절
+                    wormAngle = Math.sin(tick * 0.2) * 0.1;
+                    
+                    let targetLine = (activeBridge.fromIdx === currentLine) ? activeBridge.toIdx : activeBridge.fromIdx;
+                    let startX = colWidth * (currentLine + 1);
+                    let endX = colWidth * (targetLine + 1);
+                    
+                    currentX = startX + (endX - startX) * crossProgress;
+                    
+                    if (crossProgress >= 1) {
+                        currentLine = targetLine;
+                        state = 'DOWN';
+                        y += 2; // 다리 통과 후 아래선으로 착지 마진
+                    }
+                }
+
+                // 화면 갱신 및 캐릭터 렌더링
                 drawBoard();
-                let pos = path[step];
-                
                 ctx.save();
-                ctx.translate(pos.x, pos.y);
-                // 기어갈 때 좌우 꼬물거림 주기 최적화
-                ctx.rotate(Math.sin(step * 0.1) * 0.25); 
+                ctx.translate(currentX, y);
+                ctx.rotate(wormAngle);
                 ctx.font = "26px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.fillText("🐛", 0, 0);
                 ctx.restore();
 
-                // 💡 [핵심수정] 2프레임당 1픽셀씩 이동하도록 락을 걸어 속도를 아주 느리게 제어
-                frameDelay++;
-                if(frameDelay % 2 === 0) {
-                    step += 1; 
-                }
                 requestAnimationFrame(walk);
             } else {
-                // 도착음 축하 3단 콤보
+                // 최종 도착 성공 세레머니음
                 playTone(523.25, 0.1); 
                 setTimeout(() => playTone(659.25, 0.1), 80);
-                setTimeout(() => playTone(783.99, 0.25), 160); 
+                setTimeout(() => playTone(783.99, 0.3), 160); 
                 document.getElementById('result-box').classList.remove('hidden');
-                document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentXIdx]}]</b> 당첨!!<br>`;
+                document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentLine]}]</b> 당첨!!<br>`;
             }
         }
         walk();
     }
 
-    // 8비트 사운드 재생 코어
+    // 테트리스 사운드 칩셋 플레이어
     function playTone(freq, duration) {
         if (!audioCtx) return;
         let osc = audioCtx.createOscillator();
         let gain = audioCtx.createGain();
-        osc.type = 'square'; 
+        osc.type = 'square'; // 레트로 게임보이 질감
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.04, audioCtx.currentTime); // 적당한 볼륨 조절
         gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.start(); osc.stop(audioCtx.currentTime + duration);
     }
 
-    // 테트리스 음악 플레이 루프
     function startBGM() {
         if(isBgmPlaying) return;
         isBgmPlaying = true;
@@ -241,12 +261,9 @@
     function playBgmStep() {
         if (!isBgmPlaying) return;
         let note = tetrisBGM[currentNoteIdx % tetrisBGM.length];
-        
-        playTone(note.f, note.d * 0.13); 
+        playTone(note.f, note.d * 0.12); 
         currentNoteIdx++;
-        
-        // 속도 템포 지정 (테트리스의 신나는 속도감 반영)
-        bgmTimeout = setTimeout(playBgmStep, note.d * 140);
+        bgmTimeout = setTimeout(playBgmStep, note.d * 145);
     }
 
     function toggleBGM() {
