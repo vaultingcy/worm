@@ -64,7 +64,7 @@
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 테트리스 메인 주선율 악보 데이터 (주파수, 음표 길이)
+    // 🎵 완전히 새롭게 튜닝한 테트리스(Korobeiniki) 오리지널 멜로디 악보
     const tetrisBGM = [
         {f: 659.25, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 523.25, d: 1}, {f: 493.88, d: 1},
         {f: 440.00, d: 2}, {f: 440.00, d: 1}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
@@ -85,13 +85,14 @@
         if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
+        // 사다리 다리 배치
         bridges = [];
         for (let i = 0; i < linesCount - 1; i++) {
             let bridgeYPositions = [];
-            let bridgeCount = Math.floor(Math.random() * 3) + 4; 
+            let bridgeCount = Math.floor(Math.random() * 2) + 4; // 가로선 개수 균형 조절
             for (let j = 0; j < bridgeCount; j++) {
-                let y = Math.floor(Math.random() * 260) + 70; 
-                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 15)) { 
+                let y = Math.floor(Math.random() * 240) + 80; 
+                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 20)) { 
                     bridgeYPositions.push(y);
                     bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
                 }
@@ -100,6 +101,10 @@
 
         document.getElementById('setup-screen').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
+        
+        // 오디오 컨텍스트 강제 깨우기 및 음악 시작
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         
         startBGM();
         initGameUI();
@@ -143,7 +148,7 @@
         });
     }
 
-    // 🐛 벌레 이동 및 속도 제어 함수
+    // 🐛 가로 슬라이딩 모션이 추가된 애벌레 애니메이션
     function animateBug(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
@@ -154,24 +159,33 @@
         let path = [{ x: colWidth * (currentXIdx + 1), y: currentY }];
 
         while (currentY < 350) {
-            currentY += 2; 
-            let bridge = bridges.find(b => b.y === Math.floor(currentY) && (b.fromIdx === currentXIdx || b.toIdx === currentXIdx));
+            currentY += 1; // 1픽셀 단위로 정밀하게 내려감
+            let bridge = bridges.find(b => b.y === currentY && (b.fromIdx === currentXIdx || b.toIdx === currentXIdx));
             
             if (bridge) {
-                playTone(440, 0.05); // 다리 건널 때 효과음
                 let targetXIdx = (bridge.fromIdx === currentXIdx) ? bridge.toIdx : bridge.fromIdx;
+                let startX = colWidth * (currentXIdx + 1);
+                let endX = colWidth * (targetXIdx + 1);
                 
-                path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
-                path.push({ x: colWidth * (targetXIdx + 1), y: currentY });
+                // 💡 [핵심수정] 가로 다리를 건널 때 45단계로 쪼개서 기어가도록 수정 (순간이동 차단!)
+                let slideSteps = 45;
+                for(let s = 0; s <= slideSteps; s++) {
+                    path.push({
+                        x: startX + (endX - startX) * (s / slideSteps),
+                        y: currentY
+                    });
+                }
                 
                 currentXIdx = targetXIdx;
-                currentY += 12; 
+                currentY += 15; // 다리 탈출 점프
             } else {
                 path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
             }
         }
 
         let step = 0;
+        let frameDelay = 0;
+        
         function walk() {
             if (step < path.length) {
                 drawBoard();
@@ -179,18 +193,23 @@
                 
                 ctx.save();
                 ctx.translate(pos.x, pos.y);
-                // 속도가 느려진 만큼 꿈틀거리는 모션 주기도 부드럽게 매칭 (0.3 -> 0.1)
-                ctx.rotate(Math.sin(step * 0.1) * 0.3); 
-                ctx.font = "24px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                // 기어갈 때 좌우 꼬물거림 주기 최적화
+                ctx.rotate(Math.sin(step * 0.1) * 0.25); 
+                ctx.font = "26px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.fillText("🐛", 0, 0);
                 ctx.restore();
 
-                step += 1; // 💡 기존 '4'에서 '1'로 줄여서 4배 더 천천히 내려가도록 대폭 수정!
+                // 💡 [핵심수정] 2프레임당 1픽셀씩 이동하도록 락을 걸어 속도를 아주 느리게 제어
+                frameDelay++;
+                if(frameDelay % 2 === 0) {
+                    step += 1; 
+                }
                 requestAnimationFrame(walk);
             } else {
-                playTone(523.25, 0.15); 
-                setTimeout(() => playTone(659.25, 0.15), 100);
-                setTimeout(() => playTone(783.99, 0.3), 200); 
+                // 도착음 축하 3단 콤보
+                playTone(523.25, 0.1); 
+                setTimeout(() => playTone(659.25, 0.1), 80);
+                setTimeout(() => playTone(783.99, 0.25), 160); 
                 document.getElementById('result-box').classList.remove('hidden');
                 document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentXIdx]}]</b> 당첨!!<br>`;
             }
@@ -200,18 +219,18 @@
 
     // 8비트 사운드 재생 코어
     function playTone(freq, duration) {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioCtx) return;
         let osc = audioCtx.createOscillator();
         let gain = audioCtx.createGain();
         osc.type = 'square'; 
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.start(); osc.stop(audioCtx.currentTime + duration);
     }
 
-    // 🎵 테트리스 BGM 순환 루프 제어
+    // 테트리스 음악 플레이 루프
     function startBGM() {
         if(isBgmPlaying) return;
         isBgmPlaying = true;
@@ -223,12 +242,11 @@
         if (!isBgmPlaying) return;
         let note = tetrisBGM[currentNoteIdx % tetrisBGM.length];
         
-        // 스타카토 느낌을 살리기 위해 음 길이 조절
         playTone(note.f, note.d * 0.13); 
         currentNoteIdx++;
         
-        // 박자 속도 계산 (기본 한 박자당 150ms)
-        bgmTimeout = setTimeout(playBgmStep, note.d * 150);
+        // 속도 템포 지정 (테트리스의 신나는 속도감 반영)
+        bgmTimeout = setTimeout(playBgmStep, note.d * 140);
     }
 
     function toggleBGM() {
@@ -249,4 +267,3 @@
 </script>
 </body>
 </html>
-            
