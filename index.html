@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⚡ 경인남부지점 활력 충전! 아침 대반전 사다리 게임</title>
+    <title>⚡ 활력 충전! 아침 대반전 사다리 게임</title>
     <style>
         body { font-family: 'Pretendard', sans-serif; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; margin: 0; padding: 0; display: flex; justify-content: center; min-height: 100vh; }
         #app { width: 100%; max-width: 600px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 20px; box-sizing: border-box; box-shadow: 0 20px 50px rgba(0,0,0,0.3); border-radius: 20px; margin: 20px; }
@@ -64,16 +64,16 @@
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    const tetrisBGM = [
-        {f: 659.25, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 523.25, d: 1}, {f: 493.88, d: 1},
-        {f: 440.00, d: 2}, {f: 440.00, d: 1}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
-        {f: 493.88, d: 3}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 659.25, d: 2},
-        {f: 523.25, d: 2}, {f: 440.00, d: 2}, {f: 440.00, d: 4},
-
-        {f: 587.33, d: 3}, {f: 698.46, d: 1}, {f: 880.00, d: 2}, {f: 783.99, d: 1}, {f: 698.46, d: 1},
-        {f: 659.25, d: 3}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
-        {f: 493.88, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 659.25, d: 2},
-        {f: 523.25, d: 2}, {f: 440.00, d: 2}, {f: 440.00, d: 4}
+    // 🎵 차이콥스키 '호두까기 인형 - 행진곡(March)' 레트로 8비트 악보 데이터
+    const nutcrackerBGM = [
+        {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
+        {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
+        {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 392.00, d: 1}, {f: 329.63, d: 1},
+        {f: 523.25, d: 2}, {f: 493.88, d: 1}, {f: 440.00, d: 1},
+        {f: 392.00, d: 2}, {f: 369.99, d: 1}, {f: 329.63, d: 1},
+        {f: 293.66, d: 4},
+        {f: 293.66, d: 1}, {f: 349.23, d: 1}, {f: 440.00, d: 1}, {f: 587.33, d: 1},
+        {f: 523.25, d: 2}, {f: 493.88, d: 2}, {f: 440.00, d: 4}
     ];
 
     function startGame() {
@@ -84,24 +84,45 @@
         if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
-        // 💡 [알고리즘 전면 개조] 어떤 세로칸이든 가로선 간의 글로벌 Y축 높이 차이를 최소 25px 이상 강제 격리 보장
-        bridges = [];
-        let globalYPositions = [];
-        
-        for (let i = 0; i < linesCount - 1; i++) {
-            let columnBridges = 0;
-            let targetBridges = Math.floor(Math.random() * 2) + 3; // 라인당 가로선 3~4개 균형 생성
-            let maxAttempts = 200; // 무한루프 방지용 스로틀링
-            
-            while (columnBridges < targetBridges && maxAttempts > 0) {
-                maxAttempts--;
-                let y = Math.floor(Math.random() * 220) + 90; // 안전 스크롤 영역 내 Y 값 임의 지정
-                
-                // 옆 라인이든 어디든 전체 사다리판 중에서 상하 높이차가 25픽셀 미만인 겹침이 전혀 없을 때만 최종 확정
-                if (!globalYPositions.some(existingY => Math.abs(existingY - y) < 25)) {
-                    globalYPositions.push(y);
-                    bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
-                    columnBridges++;
+        // 💡 [난이도 대폭 상향] 모든 참가자가 무조건 2번 이상 꺾이도록 검증하는 알고리즘
+        let isValidLadder = false;
+        let loopSafety = 0;
+
+        while (!isValidLadder && loopSafety < 500) {
+            loopSafety++;
+            bridges = [];
+            let globalYPositions = [];
+
+            for (let i = 0; i < linesCount - 1; i++) {
+                let targetBridges = Math.floor(Math.random() * 2) + 4; // 열마다 가로선 4~5개 생성
+                let attempts = 0;
+                while (attempts < 100) {
+                    attempts++;
+                    let y = Math.floor(Math.random() * 230) + 85;
+                    if (!globalYPositions.some(existingY => Math.abs(existingY - y) < 25)) {
+                        globalYPositions.push(y);
+                        bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
+                    }
+                }
+            }
+            bridges.sort((a, b) => a.y - b.y);
+
+            // 곧바로 내려오는 선이 있는지 전수 시뮬레이션 검증
+            isValidLadder = true;
+            for (let start = 0; start < linesCount; start++) {
+                let currLine = start;
+                let turnCount = 0;
+                for (let testY = 50; testY < 350; testY++) {
+                    let b = bridges.find(br => br.y === testY && (br.fromIdx === currLine || br.toIdx === currLine));
+                    if (b) {
+                        turnCount++;
+                        currLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
+                        testY += 4;
+                    }
+                }
+                if (turnCount < 2) { // 꺾임이 2번 미만이면 부적격 사다리로 판정 후 재생성
+                    isValidLadder = false;
+                    break;
                 }
             }
         }
@@ -124,11 +145,9 @@
         ctx.lineWidth = 4;
         for (let i = 0; i < linesCount; i++) {
             let x = colWidth * (i + 1);
-            ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x, 350); ctx.stroke();
-            
+            ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x, 350); strokeRect = ctx.stroke();
             ctx.fillStyle = "#ffffff"; ctx.font = "bold 14px Pretendard"; ctx.textAlign = "center";
             ctx.fillText(names[i], x, 40);
-            
             ctx.fillStyle = "#00f2fe"; ctx.font = "13px Pretendard";
             ctx.fillText(prizes[i], x, 375);
         }
@@ -149,92 +168,87 @@
             const btn = document.createElement('button');
             btn.innerText = `${name} 출발!`;
             btn.style.width = 'auto'; btn.style.margin = '5px'; btn.style.fontSize = '14px';
-            btn.onclick = () => animateWormUltraSlow(idx, btn);
+            btn.onclick = () => playFixedTenSeconds(idx, btn);
             container.appendChild(btn);
         });
     }
 
-    function animateWormUltraSlow(startIdx, btnElement) {
+    // 💡 [시간 동기화 개조] 사다리 모양에 상관없이 무조건 '정확히 10초' 동안 주행하는 붕괴 방지 타임 테이블 로직
+    function playFixedTenSeconds(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
         
         const colWidth = canvas.width / (linesCount + 1);
-        let currentLine = startIdx;
+        let currLine = startIdx;
         let y = 50;
-        
-        let state = 'DOWN';
-        let lookTimer = 0;
-        let crossProgress = 0;
-        let activeBridge = null;
         let lastBridgeY = 0;
-        
-        let wormAngle = 0;
+        let preCalculatedPath = [];
         let tick = 0;
 
-        function walk() {
-            tick++;
-            let currentX = colWidth * (currentLine + 1);
-            
-            if (y < 350) {
-                if (state === 'DOWN') {
-                    y += 0.35; 
-                    wormAngle = Math.sin(tick * 0.05) * 0.12; 
-                    
-                    let currentYInt = Math.floor(y);
-                    if (currentYInt !== lastBridgeY) {
-                        let bridge = bridges.find(b => b.y === currentYInt && (b.fromIdx === currentLine || b.toIdx === currentLine));
-                        if (bridge) {
-                            playTone(300, 0.1); 
-                            state = 'LOOKING';
-                            lookTimer = 110; 
-                            activeBridge = bridge;
-                            lastBridgeY = currentYInt;
-                        }
-                    }
-                } 
-                else if (state === 'LOOKING') {
-                    wormAngle = Math.sin(lookTimer * 0.12) * 0.6; 
-                    lookTimer--;
-                    if (lookTimer <= 0) {
-                        state = 'CROSSING';
-                        crossProgress = 0;
-                    }
-                } 
-                else if (state === 'CROSSING') {
-                    crossProgress += 0.005; 
-                    wormAngle = Math.sin(tick * 0.15) * 0.08;
-                    
-                    let targetLine = (activeBridge.fromIdx === currentLine) ? activeBridge.toIdx : activeBridge.fromIdx;
-                    let startX = colWidth * (currentLine + 1);
-                    let endX = colWidth * (targetLine + 1);
-                    
-                    currentX = startX + (endX - startX) * crossProgress;
-                    
-                    if (crossProgress >= 1) {
-                        currentLine = targetLine;
-                        state = 'DOWN';
-                        y += 3; 
-                    }
-                }
+        // 1. 애니메이션 경로 사전 계산 기법 적용
+        while (y < 350) {
+            y += 0.5;
+            let yInt = Math.floor(y);
+            let b = (yInt !== lastBridgeY) ? bridges.find(br => br.y === yInt && (br.fromIdx === currLine || br.toIdx === currLine)) : null;
 
+            if (b) {
+                // 🤔 갈림길 발견! 두리번거리며 망설이는 모션 (40 프레임 분량 확보)
+                for (let f = 0; f < 40; f++) {
+                    let angle = Math.sin(f * 0.25) * 0.55; 
+                    preCalculatedPath.push({ x: colWidth * (currLine + 1), y: b.y, angle: angle, tone: (f === 0 ? 320 : 0) });
+                }
+                // 횡단보도 건너기 슬라이딩 모션 (40 프레임 분량 확보)
+                let targetLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
+                let startX = colWidth * (currLine + 1);
+                let endX = colWidth * (targetLine + 1);
+                for (let f = 0; f <= 40; f++) {
+                    let t = f / 40;
+                    let cx = startX + (endX - startX) * t;
+                    let angle = Math.sin(f * 0.2) * 0.1;
+                    preCalculatedPath.push({ x: cx, y: b.y, angle: angle, tone: 0 });
+                }
+                currLine = targetLine;
+                y = b.y + 4;
+                lastBridgeY = b.y;
+            } else {
+                // 평범한 하강 모션
+                let angle = Math.sin(tick * 0.12) * 0.12;
+                preCalculatedPath.push({ x: colWidth * (currLine + 1), y: y, angle: angle, tone: 0 });
+                tick++;
+            }
+        }
+
+        // 2. 60Hz 모니터 기준 10초 = 600 프레임 타겟 스텝 제어
+        let currentStep = 0;
+        const totalTargetFrames = 600; 
+        const stepIncrement = preCalculatedPath.length / totalTargetFrames;
+
+        function renderFrame() {
+            if (currentStep < preCalculatedPath.length) {
                 drawBoard();
+                let node = preCalculatedPath[Math.floor(currentStep)];
+                
+                if (node.tone > 0) playTone(node.tone, 0.08);
+
                 ctx.save();
-                ctx.translate(currentX, y);
-                ctx.rotate(wormAngle);
+                ctx.translate(node.x, node.y);
+                ctx.rotate(node.angle);
                 ctx.font = "26px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.fillText("🐛", 0, 0);
                 ctx.restore();
 
-                requestAnimationFrame(walk);
+                currentStep += stepIncrement; // 어떤 복잡한 맵이든 600번 만에 종료되도록 증가치 스케일링
+                requestAnimationFrame(renderFrame);
             } else {
+                // 도착 피날레
                 playTone(523.25, 0.1); 
                 setTimeout(() => playTone(659.25, 0.1), 80);
-                setTimeout(() => playTone(783.99, 0.3), 160); 
+                setTimeout(() => playTone(783.99, 0.25), 160); 
                 document.getElementById('result-box').classList.remove('hidden');
-                document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentLine]}]</b> 당첨!!<br>`;
+                document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currLine]}]</b> 당첨!!<br>`;
             }
         }
-        walk();
+        renderFrame();
     }
 
     function playTone(freq, duration) {
@@ -258,10 +272,10 @@
 
     function playBgmStep() {
         if (!isBgmPlaying) return;
-        let note = tetrisBGM[currentNoteIdx % tetrisBGM.length];
-        playTone(note.f, note.d * 0.12); 
+        let note = nutcrackerBGM[currentNoteIdx % nutcrackerBGM.length];
+        playTone(note.f, note.d * 0.15); 
         currentNoteIdx++;
-        bgmTimeout = setTimeout(playBgmStep, note.d * 145);
+        bgmTimeout = setTimeout(playBgmStep, note.d * 185); // 호두까기 인형 행진곡 비트 속도 최적화
     }
 
     function toggleBGM() {
