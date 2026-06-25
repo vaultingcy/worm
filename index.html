@@ -64,7 +64,7 @@
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 🎵 차이콥스키 '호두까기 인형 - 행진곡' 악보 데이터
+    // 🎵 차이콥스키 '호두까기 인형 - 행진곡' 주선율 악보
     const nutcrackerBGM = [
         {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
         {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
@@ -81,35 +81,40 @@
         prizes = document.getElementById('prizes-input').value.split(',').map(s => s.trim()).filter(s => s);
         linesCount = names.length;
 
-        if (linesCount < 5) { return alert("가로선 6번, 세로선 5번 이상 타는 난이도를 위해 참여자를 최소 5명 이상 입력해주세요!"); }
+        if (linesCount < 5) { return alert("난이도 유지를 위해 참여자를 최소 5명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
-        // 💡 [핵심 알고리즘] 모든 경로가 가로선>=6, 세로선>=5 조건을 충족할 때까지 무한 검증 후 생성
         let isValidLadder = false;
         let loopSafety = 0;
 
         while (!isValidLadder && loopSafety < 1000) {
             loopSafety++;
             bridges = [];
-            let globalYPositions = [];
 
-            // 고난도를 위해 열마다 7~9개의 촘촘한 가로 다리 생성
+            // 💡 [버그 수정] 글로벌 격리를 없애고 "바로 옆 줄"하고만 겹치지 않게 로컬 격리로 변경!
             for (let i = 0; i < linesCount - 1; i++) {
-                let targetBridges = Math.floor(Math.random() * 3) + 7; 
+                let targetBridges = Math.floor(Math.random() * 2) + 7; // 열마다 가로선 7~8개 빽빽하게 생성
                 let attempts = 0;
-                while (attempts < 200) {
+                let colBridgesCount = 0;
+                
+                while (colBridgesCount < targetBridges && attempts < 200) {
                     attempts++;
-                    let y = Math.floor(Math.random() * 370) + 65; // 확장된 Y축 영역 (65~435)
-                    // 육안 구분을 위해 최소 10px 이상 상하 간격 격리
-                    if (!globalYPositions.some(existingY => Math.abs(existingY - y) < 10)) {
-                        globalYPositions.push(y);
+                    let y = Math.floor(Math.random() * 370) + 65; 
+                    
+                    // 현재 줄(i)과 바로 왼쪽 줄(i-1)의 선들과만 Y축이 15px 이상 떨어지면 합격 (공간 낭비 방지)
+                    let isConflict = bridges.some(b => 
+                        (b.fromIdx === i || b.fromIdx === i - 1) && Math.abs(b.y - y) < 15
+                    );
+                    
+                    if (!isConflict) {
                         bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
+                        colBridgesCount++;
                     }
                 }
             }
             bridges.sort((a, b) => a.y - b.y);
 
-            // 전수 시뮬레이션 검증 단계
+            // 가로선 6번 이상, 세로선 5번 이상 검증 로직
             isValidLadder = true;
             for (let start = 0; start < linesCount; start++) {
                 let currLine = start;
@@ -122,14 +127,13 @@
                         horizontalCount++;
                         currLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
                         visitedLines.add(currLine);
-                        testY += 4; // 중복 카운트 방지
+                        testY += 4; 
                     }
                 }
                 
-                // 단 하나라도 가로선 6회 미만이거나 거친 세로선이 5개 미만이면 탈락 및 재배치
                 if (horizontalCount < 6 || visitedLines.size < 5) {
                     isValidLadder = false;
-                    break;
+                    break; // 하나라도 불합격이면 사다리 폭파 후 재배치
                 }
             }
         }
@@ -148,7 +152,7 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const colWidth = canvas.width / (linesCount + 1);
 
-        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
         ctx.lineWidth = 4;
         for (let i = 0; i < linesCount; i++) {
             let x = colWidth * (i + 1);
@@ -181,6 +185,7 @@
         });
     }
 
+    // 💡 10초 주행 애니메이션
     function playFixedTenSeconds(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
@@ -192,19 +197,18 @@
         let preCalculatedPath = [];
         let tick = 0;
 
-        // 애니메이션 전체 경로 계산 (Y축 한계점 450으로 확장 연동)
         while (y < 450) {
             y += 0.5;
             let yInt = Math.floor(y);
             let b = (yInt !== lastBridgeY) ? bridges.find(br => br.y === yInt && (br.fromIdx === currLine || br.toIdx === currLine)) : null;
 
             if (b) {
-                // 갈림길 발견 망설임 이펙트 (35프레임 할당)
+                // 갈림길 멈춤 및 도리도리 모션
                 for (let f = 0; f < 35; f++) {
                     let angle = Math.sin(f * 0.25) * 0.55; 
                     preCalculatedPath.push({ x: colWidth * (currLine + 1), y: b.y, angle: angle, tone: (f === 0 ? 320 : 0) });
                 }
-                // 부드러운 가로 슬라이딩 횡단 (35프레임 할당)
+                // 가로 건너가기 모션
                 let targetLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
                 let startX = colWidth * (currLine + 1);
                 let endX = colWidth * (targetLine + 1);
@@ -224,7 +228,7 @@
             }
         }
 
-        // 경로가 아무리 복잡해도 정확히 10초(600프레임) 동안 주행하도록 락 설정
+        // 경로가 아무리 복잡해도 600프레임(약 10초)에 맞춰 주파하도록 프레임 압축/확장
         let currentStep = 0;
         const totalTargetFrames = 600; 
         const stepIncrement = preCalculatedPath.length / totalTargetFrames;
@@ -263,7 +267,7 @@
         osc.type = 'square'; 
         osc.frequency.value = freq;
         gain.gain.setValueAtTime(0.04, audioCtx.currentTime); 
-        gain.gain.exponentialRampToValueAtTime(0.00001, application = audioCtx.currentTime + duration);
+        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.start(); osc.stop(audioCtx.currentTime + duration);
     }
