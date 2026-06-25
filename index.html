@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ 활력 충전! 아침 대반전 사다리 게임</title>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; margin: 0; padding: 0; display: flex; justify-content: center; min-height: 100vh; }
+        #app { width: 100%; max-width: 600px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 20px; box-sizing: border-box; box-shadow: 0 20px 50px rgba(0,0,0,0.3); border-radius: 20px; margin: 20px; }
+        h1 { text-align: center; font-size: 24px; text-shadow: 0 0 10px #00f2fe; margin-bottom: 20px; }
+        .box { background: rgba(255,255,255,0.15); border-radius: 12px; padding: 15px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.2); }
+        label { font-size: 14px; font-weight: bold; color: #00f2fe; display: block; margin-bottom: 5px; }
+        textarea, input { width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid #00f2fe; border-radius: 8px; color: white; font-size: 15px; box-sizing: border-box; margin-bottom: 10px; }
+        button { width: 100%; padding: 14px; background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 15px rgba(0,242,254,0.4); }
+        button:hover { transform: scale(1.02); }
+        #game-screen { text-align: center; }
+        canvas { background: rgba(0, 0, 0, 0.4); border-radius: 12px; border: 2px solid #4facfe; display: block; margin: 0 auto 15px auto; }
+        .hidden { display: none !important; }
+        .result-popup { background: rgba(0,0,0,0.85); border: 2px solid #00f2fe; border-radius: 12px; padding: 15px; margin-top: 15px; text-align: center; }
+        #bgm-btn { background: #ff758c; width: auto; font-size: 14px; padding: 5px 10px; float: right; margin-top: -45px; box-shadow: none; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div id="setup-screen">
+        <h1>🌅 아침 활력 충전 사다리 게임</h1>
+        <div class="box">
+            <label>참여자 명단 (쉼표로 구분)</label>
+            <textarea id="names-input" rows="3">김팀장, 이대리, 박과장, 최사원, 정주임</textarea>
+            
+            <label>경품 및 벌칙 명단 (참여자 수와 동일하게 쉼표 구분)</label>
+            <textarea id="prizes-input" rows="3">☕커피쿠폰, 🚀30분조기퇴근, 💥아침댄스인증, 🍩도넛간식, 💤다음주당직</textarea>
+        </div>
+        <button onclick="startGame()">⚡ 흥겨운 게임 시작!</button>
+    </div>
+
+    <div id="game-screen" class="hidden">
+        <h1>🐛 꿈틀꿈틀 사다리 타기</h1>
+        <button id="bgm-btn" onclick="toggleBGM()">🎵 BGM 켜기/끄기</button>
+        
+        <canvas id="ladder-canvas" width="500" height="400"></canvas>
+        <p style="color: #00f2fe; font-weight: bold;">👇 출발할 참여자의 이름을 누르세요!</p>
+        <div id="buttons-container"></div>
+        
+        <div id="result-box" class="result-popup hidden">
+            <h2 style="color: #ff3b30; margin: 0 0 10px 0;">🏆 대반전 결과 발표 🏆</h2>
+            <p id="result-text" style="font-size: 18px; font-weight: bold;"></p>
+            <button onclick="resetGame()" style="background: #666; font-size: 14px; padding: 8px;">다시 세팅하기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let names = [];
+    let prizes = [];
+    let linesCount = 0;
+    let bridges = [];
+    let audioCtx = null;
+    let bgmInterval = null;
+    let isBgmPlaying = false;
+
+    const canvas = document.getElementById('ladder-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // 1. 게임 초기화 및 시작
+    function startGame() {
+        names = document.getElementById('names-input').value.split(',').map(s => s.trim()).filter(s => s);
+        prizes = document.getElementById('prizes-input').value.split(',').map(s => s.trim()).filter(s => s);
+        linesCount = names.length;
+
+        if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
+        if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
+
+        // 사다리 다리(다리) 랜덤 생성 (반전 가득하도록 촘촘하게 생성)
+        bridges = [];
+        for (let i = 0; i < linesCount - 1; i++) {
+            let bridgeYPositions = [];
+            let bridgeCount = Math.floor(Math.random() * 4) + 4; // 라인당 4~7개 다리 생성
+            for (let j = 0; j < bridgeCount; j++) {
+                let y = Math.floor(Math.random() * 260) + 70; // Y축 70~330 사이
+                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 15)) { // 겹침 방지
+                    bridgeYPositions.push(y);
+                    bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
+                }
+            }
+        }
+
+        document.getElementById('setup-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        
+        startBGM();
+        initGameUI();
+    }
+
+    // 2. 게임 보드 그리기
+    function drawBoard() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const colWidth = canvas.width / (linesCount + 1);
+
+        // 세로선 그리기
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 4;
+        for (let i = 0; i < linesCount; i++) {
+            let x = colWidth * (i + 1);
+            ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x, 350); ctx.stroke();
+            
+            // 이름 텍스트
+            ctx.fillStyle = "#ffffff"; ctx.font = "bold 14px Pretendard"; ctx.textAlign = "center";
+            ctx.fillText(names[i], x, 40);
+            
+            // 경품 텍스트 (아직은 숨김처리 하거나 하단에 배치)
+            ctx.fillStyle = "#00f2fe"; ctx.font = "13px Pretendard";
+            ctx.fillText(prizes[i], x, 375);
+        }
+
+        // 가로 다리 그리기
+        ctx.strokeStyle = "#4facfe"; ctx.lineWidth = 4;
+        bridges.forEach(b => {
+            let x1 = colWidth * (b.fromIdx + 1);
+            let x2 = colWidth * (b.toIdx + 1);
+            ctx.beginPath(); ctx.moveTo(x1, b.y); ctx.lineTo(x2, b.y); ctx.stroke();
+        });
+    }
+
+    // 3. 하단 참여 버튼 생성
+    function initGameUI() {
+        drawBoard();
+        const container = document.getElementById('buttons-container');
+        container.innerHTML = '';
+        names.forEach((name, idx) => {
+            const btn = document.createElement('button');
+            btn.innerText = `${name} 출발!`;
+            btn.style.width = 'auto'; btn.style.margin = '5px'; btn.style.fontSize = '14px';
+            btn.onclick = () => animateBug(idx, btn);
+            container.appendChild(btn);
+        });
+    }
+
+    // 4. 귀여운 벌레 꿈틀꿈틀 애니메이션 & 반전 로직
+    function animateBug(startIdx, btnElement) {
+        btnElement.disabled = true;
+        btnElement.style.background = '#444';
+        
+        const colWidth = canvas.width / (linesCount + 1);
+        let currentXIdx = startIdx;
+        let currentY = 50;
+        let path = [{ x: colWidth * (currentXIdx + 1), y: currentY }];
+
+        // 벌레가 이동할 전체 경로 미리 계산
+        while (currentY < 350) {
+            currentY += 2; // 조금씩 아래로 전진
+            // 현재 높이에서 좌우 연결 다리가 있는지 확인
+            let bridge = bridges.find(b => b.y === Math.floor(currentY) && (b.fromIdx === currentXIdx || b.toIdx === currentXIdx));
+            
+            if (bridge) {
+                playTone(400, 0.05); // 다리 건널 때 '삑' 효과음
+                let targetXIdx = (bridge.fromIdx === currentXIdx) ? bridge.toIdx : bridge.fromIdx;
+                
+                // 가로로 이동하는 경로 추가 (대반전 유도)
+                path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
+                path.push({ x: colWidth * (targetXIdx + 1), y: currentY });
+                
+                currentXIdx = targetXIdx;
+                currentY += 10; // 다리를 타고 중복 이동 방지를 위해 살짝 점프
+            } else {
+                path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
+            }
+        }
+
+        // 애니메이션 플레이
+        let step = 0;
+        function walk() {
+            if (step < path.length) {
+                drawBoard();
+                let pos = path[step];
+                
+                // 꿈틀거리는 회전 효과 효과 구현
+                ctx.save();
+                ctx.translate(pos.x, pos.y);
+                ctx.rotate(Math.sin(step * 0.3) * 0.3); // 좌우로 꿈틀꿈틀 wiggle!
+                ctx.font = "24px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.fillText("🐛", 0, 0);
+                ctx.restore();
+
+                step += 4; // 속도 조절
+                requestAnimationFrame(walk);
+            } else {
+                // 도착 완료! 결과창 띄우기
+                playTone(600, 0.2); setTimeout(() => playTone(800, 0.3), 150); // 당첨 축하 효과음
+                document.getElementById('result-box').classList.remove('hidden');
+                document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentXIdx]}]</b> 당첨!!<br>`;
+            }
+        }
+        walk();
+    }
+
+    // 5. 신나는 8비트 사운드 합성기 (Web Audio API)
+    function playTone(freq, duration) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'square'; // 레트로 8비트 오락실 사운드
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function startBGM() {
+        if(isBgmPlaying) return;
+        isBgmPlaying = true;
+        // 신나는 노동요 멜로디 루프 생성
+        const notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63, 261.63, 349.23, 440.00, 523.25];
+        let noteIdx = 0;
+        bgmInterval = setInterval(() => {
+            playTone(notes[noteIdx % notes.length], 0.1);
+            noteIdx++;
+        }, 200);
+    }
+
+    function toggleBGM() {
+        if (isBgmPlaying) {
+            clearInterval(bgmInterval); isBgmPlaying = false;
+        } else {
+            startBGM();
+        }
+    }
+
+    function resetGame() {
+        clearInterval(bgmInterval); isBgmPlaying = false;
+        document.getElementById('result-text').innerText = '';
+        document.getElementById('result-box').classList.add('hidden');
+        document.getElementById('setup-screen').classList.remove('hidden');
+        document.getElementById('game-screen').classList.add('hidden');
+    }
+</script>
+</body>
+</html>
