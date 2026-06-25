@@ -57,13 +57,26 @@
     let linesCount = 0;
     let bridges = [];
     let audioCtx = null;
-    let bgmInterval = null;
+    let bgmTimeout = null;
     let isBgmPlaying = false;
+    let currentNoteIdx = 0;
 
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 1. 게임 초기화 및 시작
+    // 테트리스 메인 주선율 악보 데이터 (주파수, 음표 길이)
+    const tetrisBGM = [
+        {f: 659.25, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 523.25, d: 1}, {f: 493.88, d: 1},
+        {f: 440.00, d: 2}, {f: 440.00, d: 1}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
+        {f: 493.88, d: 3}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 659.25, d: 2},
+        {f: 523.25, d: 2}, {f: 440.00, d: 2}, {f: 440.00, d: 4},
+
+        {f: 587.33, d: 3}, {f: 698.46, d: 1}, {f: 880.00, d: 2}, {f: 783.99, d: 1}, {f: 698.46, d: 1},
+        {f: 659.25, d: 3}, {f: 523.25, d: 1}, {f: 659.25, d: 2}, {f: 587.33, d: 1}, {f: 523.25, d: 1},
+        {f: 493.88, d: 2}, {f: 493.88, d: 1}, {f: 523.25, d: 1}, {f: 587.33, d: 2}, {f: 659.25, d: 2},
+        {f: 523.25, d: 2}, {f: 440.00, d: 2}, {f: 440.00, d: 4}
+    ];
+
     function startGame() {
         names = document.getElementById('names-input').value.split(',').map(s => s.trim()).filter(s => s);
         prizes = document.getElementById('prizes-input').value.split(',').map(s => s.trim()).filter(s => s);
@@ -72,14 +85,13 @@
         if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
-        // 사다리 다리(다리) 랜덤 생성 (반전 가득하도록 촘촘하게 생성)
         bridges = [];
         for (let i = 0; i < linesCount - 1; i++) {
             let bridgeYPositions = [];
-            let bridgeCount = Math.floor(Math.random() * 4) + 4; // 라인당 4~7개 다리 생성
+            let bridgeCount = Math.floor(Math.random() * 3) + 4; 
             for (let j = 0; j < bridgeCount; j++) {
-                let y = Math.floor(Math.random() * 260) + 70; // Y축 70~330 사이
-                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 15)) { // 겹침 방지
+                let y = Math.floor(Math.random() * 260) + 70; 
+                if (!bridgeYPositions.some(existingY => Math.abs(existingY - y) < 15)) { 
                     bridgeYPositions.push(y);
                     bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
                 }
@@ -93,28 +105,23 @@
         initGameUI();
     }
 
-    // 2. 게임 보드 그리기
     function drawBoard() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const colWidth = canvas.width / (linesCount + 1);
 
-        // 세로선 그리기
         ctx.strokeStyle = "rgba(255,255,255,0.6)";
         ctx.lineWidth = 4;
         for (let i = 0; i < linesCount; i++) {
             let x = colWidth * (i + 1);
             ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x, 350); ctx.stroke();
             
-            // 이름 텍스트
             ctx.fillStyle = "#ffffff"; ctx.font = "bold 14px Pretendard"; ctx.textAlign = "center";
             ctx.fillText(names[i], x, 40);
             
-            // 경품 텍스트 (아직은 숨김처리 하거나 하단에 배치)
             ctx.fillStyle = "#00f2fe"; ctx.font = "13px Pretendard";
             ctx.fillText(prizes[i], x, 375);
         }
 
-        // 가로 다리 그리기
         ctx.strokeStyle = "#4facfe"; ctx.lineWidth = 4;
         bridges.forEach(b => {
             let x1 = colWidth * (b.fromIdx + 1);
@@ -123,7 +130,6 @@
         });
     }
 
-    // 3. 하단 참여 버튼 생성
     function initGameUI() {
         drawBoard();
         const container = document.getElementById('buttons-container');
@@ -137,7 +143,7 @@
         });
     }
 
-    // 4. 귀여운 벌레 꿈틀꿈틀 애니메이션 & 반전 로직
+    // 🐛 벌레 이동 및 속도 제어 함수
     function animateBug(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
@@ -147,47 +153,44 @@
         let currentY = 50;
         let path = [{ x: colWidth * (currentXIdx + 1), y: currentY }];
 
-        // 벌레가 이동할 전체 경로 미리 계산
         while (currentY < 350) {
-            currentY += 2; // 조금씩 아래로 전진
-            // 현재 높이에서 좌우 연결 다리가 있는지 확인
+            currentY += 2; 
             let bridge = bridges.find(b => b.y === Math.floor(currentY) && (b.fromIdx === currentXIdx || b.toIdx === currentXIdx));
             
             if (bridge) {
-                playTone(400, 0.05); // 다리 건널 때 '삑' 효과음
+                playTone(440, 0.05); // 다리 건널 때 효과음
                 let targetXIdx = (bridge.fromIdx === currentXIdx) ? bridge.toIdx : bridge.fromIdx;
                 
-                // 가로로 이동하는 경로 추가 (대반전 유도)
                 path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
                 path.push({ x: colWidth * (targetXIdx + 1), y: currentY });
                 
                 currentXIdx = targetXIdx;
-                currentY += 10; // 다리를 타고 중복 이동 방지를 위해 살짝 점프
+                currentY += 12; 
             } else {
                 path.push({ x: colWidth * (currentXIdx + 1), y: currentY });
             }
         }
 
-        // 애니메이션 플레이
         let step = 0;
         function walk() {
             if (step < path.length) {
                 drawBoard();
                 let pos = path[step];
                 
-                // 꿈틀거리는 회전 효과 효과 구현
                 ctx.save();
                 ctx.translate(pos.x, pos.y);
-                ctx.rotate(Math.sin(step * 0.3) * 0.3); // 좌우로 꿈틀꿈틀 wiggle!
+                // 속도가 느려진 만큼 꿈틀거리는 모션 주기도 부드럽게 매칭 (0.3 -> 0.1)
+                ctx.rotate(Math.sin(step * 0.1) * 0.3); 
                 ctx.font = "24px Pretendard"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.fillText("🐛", 0, 0);
                 ctx.restore();
 
-                step += 4; // 속도 조절
+                step += 1; // 💡 기존 '4'에서 '1'로 줄여서 4배 더 천천히 내려가도록 대폭 수정!
                 requestAnimationFrame(walk);
             } else {
-                // 도착 완료! 결과창 띄우기
-                playTone(600, 0.2); setTimeout(() => playTone(800, 0.3), 150); // 당첨 축하 효과음
+                playTone(523.25, 0.15); 
+                setTimeout(() => playTone(659.25, 0.15), 100);
+                setTimeout(() => playTone(783.99, 0.3), 200); 
                 document.getElementById('result-box').classList.remove('hidden');
                 document.getElementById('result-text').innerHTML += `🎯 <b>[${names[startIdx]}]</b> 님 ➡️ <b>[${prizes[currentXIdx]}]</b> 당첨!!<br>`;
             }
@@ -195,41 +198,49 @@
         walk();
     }
 
-    // 5. 신나는 8비트 사운드 합성기 (Web Audio API)
+    // 8비트 사운드 재생 코어
     function playTone(freq, duration) {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         let osc = audioCtx.createOscillator();
         let gain = audioCtx.createGain();
-        osc.type = 'square'; // 레트로 8비트 오락실 사운드
+        osc.type = 'square'; 
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.start(); osc.stop(audioCtx.currentTime + duration);
     }
 
+    // 🎵 테트리스 BGM 순환 루프 제어
     function startBGM() {
         if(isBgmPlaying) return;
         isBgmPlaying = true;
-        // 신나는 노동요 멜로디 루프 생성
-        const notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63, 261.63, 349.23, 440.00, 523.25];
-        let noteIdx = 0;
-        bgmInterval = setInterval(() => {
-            playTone(notes[noteIdx % notes.length], 0.1);
-            noteIdx++;
-        }, 200);
+        currentNoteIdx = 0;
+        playBgmStep();
+    }
+
+    function playBgmStep() {
+        if (!isBgmPlaying) return;
+        let note = tetrisBGM[currentNoteIdx % tetrisBGM.length];
+        
+        // 스타카토 느낌을 살리기 위해 음 길이 조절
+        playTone(note.f, note.d * 0.13); 
+        currentNoteIdx++;
+        
+        // 박자 속도 계산 (기본 한 박자당 150ms)
+        bgmTimeout = setTimeout(playBgmStep, note.d * 150);
     }
 
     function toggleBGM() {
         if (isBgmPlaying) {
-            clearInterval(bgmInterval); isBgmPlaying = false;
+            clearTimeout(bgmTimeout); isBgmPlaying = false;
         } else {
             startBGM();
         }
     }
 
     function resetGame() {
-        clearInterval(bgmInterval); isBgmPlaying = false;
+        clearTimeout(bgmTimeout); isBgmPlaying = false;
         document.getElementById('result-text').innerText = '';
         document.getElementById('result-box').classList.add('hidden');
         document.getElementById('setup-screen').classList.remove('hidden');
@@ -238,3 +249,4 @@
 </script>
 </body>
 </html>
+            
