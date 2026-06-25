@@ -64,7 +64,6 @@
     const canvas = document.getElementById('ladder-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 🎵 차이콥스키 '호두까기 인형 - 행진곡' 주선율 악보
     const nutcrackerBGM = [
         {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
         {f: 392.00, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1}, {f: 329.63, d: 1},
@@ -81,7 +80,7 @@
         prizes = document.getElementById('prizes-input').value.split(',').map(s => s.trim()).filter(s => s);
         linesCount = names.length;
 
-        if (linesCount < 5) { return alert("난이도 유지를 위해 참여자를 최소 5명 이상 입력해주세요!"); }
+        if (linesCount < 2) { return alert("참여자를 최소 2명 이상 입력해주세요!"); }
         if (linesCount !== prizes.length) { return alert(`참여자 수(${linesCount}명)와 경품 수(${prizes.length}개)가 일치해야 합니다!`); }
 
         let isValidLadder = false;
@@ -90,50 +89,46 @@
         while (!isValidLadder && loopSafety < 1000) {
             loopSafety++;
             bridges = [];
-
-            // 💡 [버그 수정] 글로벌 격리를 없애고 "바로 옆 줄"하고만 겹치지 않게 로컬 격리로 변경!
-            for (let i = 0; i < linesCount - 1; i++) {
-                let targetBridges = Math.floor(Math.random() * 2) + 7; // 열마다 가로선 7~8개 빽빽하게 생성
-                let attempts = 0;
-                let colBridgesCount = 0;
+            
+            // 총 인원수에 비례하여 넉넉한 수의 랜덤 가로선 배치 목표 설정
+            let totalBridgesToCreate = linesCount * 7; 
+            let attempts = 0;
+            
+            while (bridges.length < totalBridgesToCreate && attempts < 3000) {
+                attempts++;
+                // 가로선을 놓을 랜덤 기둥 사이 골목(i) 선택
+                let i = Math.floor(Math.random() * (linesCount - 1)); 
+                let y = Math.floor(Math.random() * 370) + 70; // 70px ~ 440px 사이 랜덤 높이
                 
-                while (colBridgesCount < targetBridges && attempts < 200) {
-                    attempts++;
-                    let y = Math.floor(Math.random() * 370) + 65; 
-                    
-                    // 현재 줄(i)과 바로 왼쪽 줄(i-1)의 선들과만 Y축이 15px 이상 떨어지면 합격 (공간 낭비 방지)
-                    let isConflict = bridges.some(b => 
-                        (b.fromIdx === i || b.fromIdx === i - 1) && Math.abs(b.y - y) < 15
-                    );
-                    
-                    if (!isConflict) {
-                        bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
-                        colBridgesCount++;
-                    }
+                // 💡 [버그 완전 해결] 다른 열과 상관없이 "해당 골목(i)" 내의 기존 선들과만 Y축이 15px 이상 떨어져 있으면 합격!
+                let hasCollision = bridges.some(b => b.fromIdx === i && Math.abs(b.y - y) < 15);
+                // 양옆 인접 골목과 정밀하게 겹쳐서 일직선으로 쭉 이어지는 현상 방지용 마진
+                let hasAdjacentSameY = bridges.some(b => (b.fromIdx === i - 1 || b.fromIdx === i + 1) && Math.abs(b.y - y) < 5);
+
+                if (!hasCollision && !hasAdjacentSameY) {
+                    bridges.push({ fromIdx: i, toIdx: i + 1, y: y });
                 }
             }
             bridges.sort((a, b) => a.y - b.y);
 
-            // 가로선 6번 이상, 세로선 5번 이상 검증 로직
+            // 💡 [새 조건 검증] 모든 참여자가 '참여 인원수보다 많은 횟수'로 꺾이는지 검증
             isValidLadder = true;
             for (let start = 0; start < linesCount; start++) {
                 let currLine = start;
-                let horizontalCount = 0;
-                let visitedLines = new Set([currLine]);
-
+                let turnCount = 0;
                 for (let testY = 50; testY < 450; testY++) {
                     let b = bridges.find(br => br.y === testY && (br.fromIdx === currLine || br.toIdx === currLine));
                     if (b) {
-                        horizontalCount++;
+                        turnCount++;
                         currLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
-                        visitedLines.add(currLine);
-                        testY += 4; 
+                        testY += 4; // 가로선 두께 무시용 패스
                     }
                 }
                 
-                if (horizontalCount < 6 || visitedLines.size < 5) {
+                // 단 한 명이라도 꺾인 횟수가 총 참여 인원수(linesCount) 이하라면 꽝! 사다리 전체 재조립
+                if (turnCount <= linesCount) {
                     isValidLadder = false;
-                    break; // 하나라도 불합격이면 사다리 폭파 후 재배치
+                    break;
                 }
             }
         }
@@ -185,7 +180,6 @@
         });
     }
 
-    // 💡 10초 주행 애니메이션
     function playFixedTenSeconds(startIdx, btnElement) {
         btnElement.disabled = true;
         btnElement.style.background = '#444';
@@ -203,12 +197,10 @@
             let b = (yInt !== lastBridgeY) ? bridges.find(br => br.y === yInt && (br.fromIdx === currLine || br.toIdx === currLine)) : null;
 
             if (b) {
-                // 갈림길 멈춤 및 도리도리 모션
                 for (let f = 0; f < 35; f++) {
                     let angle = Math.sin(f * 0.25) * 0.55; 
                     preCalculatedPath.push({ x: colWidth * (currLine + 1), y: b.y, angle: angle, tone: (f === 0 ? 320 : 0) });
                 }
-                // 가로 건너가기 모션
                 let targetLine = (b.fromIdx === currLine) ? b.toIdx : b.fromIdx;
                 let startX = colWidth * (currLine + 1);
                 let endX = colWidth * (targetLine + 1);
@@ -228,7 +220,6 @@
             }
         }
 
-        // 경로가 아무리 복잡해도 600프레임(약 10초)에 맞춰 주파하도록 프레임 압축/확장
         let currentStep = 0;
         const totalTargetFrames = 600; 
         const stepIncrement = preCalculatedPath.length / totalTargetFrames;
